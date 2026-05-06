@@ -1,0 +1,1736 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>備品管理システム v1.1.0</title>
+<style>
+/* ===== リセット・基本 ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+  background: #f0f4f8;
+  min-height: 100vh;
+  overscroll-behavior: none;
+}
+
+/* ===== 画面管理 ===== */
+.screen { display: none; min-height: 100vh; flex-direction: column; }
+.screen.active { display: flex; }
+
+/* ===== ヘッダー ===== */
+.header {
+  background: #2c3e50;
+  color: white;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.header h1 { font-size: 18px; font-weight: 700; }
+.return-btn {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(231,76,60,0.4);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.return-btn:active { transform: scale(0.96); box-shadow: none; }
+
+/* ===== メインコンテンツ ===== */
+.main-content {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+/* ===== 備品グリッド ===== */
+.item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  padding-bottom: 80px;
+}
+.item-btn {
+  background: white;
+  border: 3px solid #dce3ea;
+  border-radius: 16px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  position: relative;
+  min-height: 140px;
+  justify-content: center;
+}
+.item-btn:active { transform: scale(0.95); }
+.item-btn.selected {
+  border-color: #3498db;
+  background: #ebf5fb;
+  box-shadow: 0 4px 16px rgba(52,152,219,0.3);
+}
+.item-btn.unavailable {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: #f5f5f5;
+}
+.item-btn .item-img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border-radius: 10px;
+}
+.item-btn .item-emoji {
+  font-size: 52px;
+  line-height: 1;
+}
+.item-btn .item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+  text-align: center;
+  line-height: 1.3;
+}
+.item-btn .item-stock {
+  font-size: 12px;
+  color: #7f8c8d;
+  background: #ecf0f1;
+  padding: 2px 10px;
+  border-radius: 12px;
+}
+.item-btn.selected .item-stock {
+  background: #3498db;
+  color: white;
+}
+.item-btn .stock-zero {
+  color: #e74c3c;
+  font-weight: 700;
+}
+.selected-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: #3498db;
+  color: white;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  display: none;
+}
+.item-btn.selected .selected-check { display: flex; }
+
+/* ===== フッター固定エリア ===== */
+.footer-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  padding: 10px 16px;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.12);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 100;
+}
+.admin-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.admin-badge {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  font-size: 14px;
+  display: none;
+  z-index: 1;
+}
+.admin-btn {
+  background: #95a5a6;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.admin-btn:active { transform: scale(0.95); }
+.proceed-btn {
+  flex: 1;
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  border: none;
+  padding: 14px;
+  border-radius: 14px;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(52,152,219,0.35);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.proceed-btn:active { transform: scale(0.97); box-shadow: none; }
+.proceed-btn:disabled {
+  background: #bdc3c7;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* ===== ポップアップ・モーダル ===== */
+.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.overlay.show { display: flex; }
+.modal {
+  background: white;
+  border-radius: 20px;
+  padding: 28px 24px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.25);
+  animation: modalIn 0.2s ease;
+}
+@keyframes modalIn {
+  from { transform: scale(0.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.modal h2 { font-size: 20px; color: #2c3e50; margin-bottom: 16px; text-align: center; }
+.modal p { color: #555; font-size: 15px; margin-bottom: 18px; text-align: center; line-height: 1.6; }
+.modal input[type="text"] {
+  width: 100%;
+  padding: 14px 16px;
+  border: 2px solid #dce3ea;
+  border-radius: 12px;
+  font-size: 18px;
+  margin-bottom: 16px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.modal input[type="text"]:focus { border-color: #3498db; }
+.modal-btns {
+  display: flex;
+  gap: 10px;
+}
+.btn-primary {
+  flex: 1;
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  border: none;
+  padding: 13px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.btn-primary:active { transform: scale(0.97); }
+.btn-secondary {
+  background: #ecf0f1;
+  color: #555;
+  border: none;
+  padding: 13px 20px;
+  border-radius: 12px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.btn-secondary:active { transform: scale(0.97); }
+.btn-danger {
+  flex: 1;
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  color: white;
+  border: none;
+  padding: 13px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.btn-danger:active { transform: scale(0.97); }
+
+/* ===== 確認画面の選択備品リスト ===== */
+.confirm-list {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.confirm-list li {
+  list-style: none;
+  padding: 6px 0;
+  border-bottom: 1px solid #eee;
+  font-size: 15px;
+  color: #2c3e50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.confirm-list li:last-child { border-bottom: none; }
+
+/* ===== 返却画面 ===== */
+.return-item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  padding-bottom: 80px;
+}
+.return-item-btn {
+  background: white;
+  border: 3px solid #dce3ea;
+  border-radius: 14px;
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.2s;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.07);
+  min-height: 120px;
+  justify-content: center;
+}
+.return-item-btn:active { transform: scale(0.95); }
+.return-item-btn.selected {
+  border-color: #27ae60;
+  background: #eafaf1;
+  box-shadow: 0 4px 14px rgba(39,174,96,0.25);
+}
+.return-item-btn .item-emoji { font-size: 40px; }
+.return-item-btn .item-img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.return-item-btn .item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2c3e50;
+  text-align: center;
+}
+.return-item-btn .loan-date {
+  font-size: 11px;
+  color: #95a5a6;
+}
+.return-selected-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: #27ae60;
+  color: white;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+.return-item-btn { position: relative; }
+.return-item-btn.selected .return-selected-check { display: flex; }
+
+/* ===== 管理画面 ===== */
+.admin-screen {
+  background: #f0f4f8;
+  min-height: 100vh;
+}
+.admin-header {
+  background: #2c3e50;
+  color: white;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.admin-header h1 { font-size: 18px; font-weight: 700; flex: 1; }
+.back-btn {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.admin-tabs {
+  display: flex;
+  background: white;
+  border-bottom: 2px solid #dce3ea;
+  overflow-x: auto;
+}
+.admin-tab {
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #7f8c8d;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.admin-tab.active { color: #3498db; border-bottom-color: #3498db; }
+.admin-panel { display: none; padding: 16px; }
+.admin-panel.active { display: block; }
+
+/* 管理画面カード */
+.admin-card {
+  background: white;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+.admin-card h3 {
+  font-size: 16px;
+  color: #2c3e50;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #f0f4f8;
+}
+.form-group { margin-bottom: 12px; }
+.form-group label {
+  display: block;
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid #dce3ea;
+  border-radius: 10px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.form-group input:focus,
+.form-group select:focus { border-color: #3498db; }
+.emoji-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.emoji-option {
+  font-size: 28px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  transition: border-color 0.15s;
+}
+.emoji-option.selected-emoji { border-color: #3498db; background: #ebf5fb; }
+.image-upload-area {
+  border: 2px dashed #bdc3c7;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  color: #95a5a6;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+.image-upload-area:hover { border-color: #3498db; color: #3498db; }
+.image-preview {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  border-radius: 10px;
+  margin: 8px auto;
+  display: block;
+}
+
+/* 備品リスト（管理） */
+.item-list-admin { }
+.item-row {
+  background: white;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.07);
+}
+.item-row .item-icon { font-size: 32px; }
+.item-row .item-icon-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.item-row-info { flex: 1; }
+.item-row-info .name { font-size: 15px; font-weight: 600; color: #2c3e50; }
+.item-row-info .stock { font-size: 13px; color: #7f8c8d; }
+.item-row-btns { display: flex; gap: 6px; }
+.edit-btn, .delete-btn {
+  border: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.edit-btn { background: #3498db; color: white; }
+.delete-btn { background: #e74c3c; color: white; }
+
+/* 貸出状況テーブル */
+.status-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.status-table th {
+  background: #2c3e50;
+  color: white;
+  padding: 10px 8px;
+  text-align: left;
+}
+.status-table td {
+  padding: 9px 8px;
+  border-bottom: 1px solid #ecf0f1;
+  color: #2c3e50;
+}
+.status-table tr:hover td { background: #f8f9fa; }
+.overdue-row td { background: #fef9e7; }
+.overdue-badge {
+  background: #f39c12;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  margin-left: 4px;
+}
+
+/* サウンド設定 */
+.sound-options { display: flex; flex-direction: column; gap: 10px; }
+.sound-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8f9fa;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 0.2s;
+}
+.sound-option.selected-sound { border-color: #3498db; background: #ebf5fb; }
+.sound-option input[type="radio"] { display: none; }
+.sound-option .sound-label { font-size: 15px; font-weight: 600; flex: 1; }
+.sound-option .sound-desc { font-size: 12px; color: #7f8c8d; }
+.test-sound-btn {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ===== ステータスバー（画面上部通知） ===== */
+.toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-80px);
+  background: #2c3e50;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 24px;
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 999;
+  transition: transform 0.3s ease;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.success { background: #27ae60; }
+.toast.error { background: #e74c3c; }
+
+/* ===== PIN入力画面 ===== */
+.pin-display {
+  font-size: 36px;
+  letter-spacing: 12px;
+  text-align: center;
+  margin: 16px 0;
+  color: #2c3e50;
+  min-height: 48px;
+}
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-width: 280px;
+  margin: 0 auto;
+}
+.pin-key {
+  background: #f0f4f8;
+  border: none;
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 22px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s, background 0.1s;
+  color: #2c3e50;
+}
+.pin-key:active { transform: scale(0.93); background: #dce3ea; }
+.pin-key.pin-del { background: #e74c3c; color: white; font-size: 18px; }
+.pin-key.pin-ok { background: #27ae60; color: white; }
+.pin-error { color: #e74c3c; text-align: center; font-size: 14px; min-height: 20px; margin-top: 8px; }
+
+/* ===== 空状態 ===== */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #95a5a6;
+}
+.empty-state .empty-icon { font-size: 56px; margin-bottom: 12px; }
+.empty-state p { font-size: 16px; }
+
+/* ===== セクションタイトル ===== */
+.section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin-bottom: 12px;
+  padding-left: 4px;
+}
+
+/* ===== CSV出力ボタン ===== */
+.csv-btn {
+  background: #27ae60;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 14px;
+  transition: transform 0.1s;
+}
+.csv-btn:active { transform: scale(0.97); }
+
+/* ===== レスポンシブ ===== */
+@media (min-width: 768px) {
+  .item-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  .modal { max-width: 480px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== 貸出メイン画面 ===== -->
+<div id="screen-main" class="screen active">
+  <div class="header">
+    <h1>📦 備品管理</h1>
+    <button class="return-btn" onclick="openReturnFlow()">↩ 返却する</button>
+  </div>
+  <div class="main-content">
+    <div class="section-title">借りたい備品を選んでください（複数選択可）</div>
+    <div class="item-grid" id="item-grid"></div>
+  </div>
+  <div class="footer-bar">
+    <div class="admin-wrap">
+      <span class="admin-badge" id="overdue-badge">⭐</span>
+      <button class="admin-btn" onclick="openAdmin()">⚙ 管理</button>
+    </div>
+    <button class="proceed-btn" id="proceed-loan-btn" disabled onclick="proceedLoan()">
+      貸出手続きへ →
+    </button>
+  </div>
+</div>
+
+<!-- ===== 返却画面 ===== -->
+<div id="screen-return" class="screen">
+  <div class="header">
+    <h1>↩ 返却</h1>
+    <button class="return-btn" style="background:#95a5a6;" onclick="goHome()">キャンセル</button>
+  </div>
+  <div class="main-content">
+    <div id="return-name-section">
+      <div class="section-title">お名前を入力してください</div>
+      <input type="text" id="return-name-input" placeholder="例：山田 太郎"
+        style="width:100%;padding:14px 16px;border:2px solid #dce3ea;border-radius:12px;font-size:18px;outline:none;margin-bottom:12px;"
+        oninput="loadBorrowedItems()">
+      <div id="borrowed-items-area" style="display:none;">
+        <div class="section-title" style="margin-top:16px;">返却する備品を選んでください（複数選択可）</div>
+        <div class="return-item-grid" id="return-item-grid"></div>
+      </div>
+      <div id="no-borrowed-msg" style="display:none;">
+        <div class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <p>現在貸出中の備品がありません</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bar" id="return-footer" style="display:none;">
+    <button class="proceed-btn" id="proceed-return-btn" disabled
+      style="background:linear-gradient(135deg,#27ae60,#219a52);" onclick="confirmReturn()">
+      返却する →
+    </button>
+  </div>
+</div>
+
+<!-- ===== 管理画面 ===== -->
+<div id="screen-admin" class="screen admin-screen">
+  <div class="admin-header">
+    <button class="back-btn" onclick="goHome()">← 戻る</button>
+    <h1>⚙ 管理画面</h1>
+  </div>
+  <div class="admin-tabs">
+    <button class="admin-tab active" onclick="switchTab('tab-items')">備品管理</button>
+    <button class="admin-tab" onclick="switchTab('tab-status')">貸出状況</button>
+    <button class="admin-tab" onclick="switchTab('tab-history')">履歴</button>
+    <button class="admin-tab" onclick="switchTab('tab-settings')">設定</button>
+  </div>
+
+  <!-- 備品管理タブ -->
+  <div id="tab-items" class="admin-panel active">
+    <div class="admin-card">
+      <h3 id="item-form-title">＋ 備品を登録する</h3>
+      <div class="form-group">
+        <label>備品名</label>
+        <input type="text" id="admin-item-name" placeholder="例：プロジェクター">
+      </div>
+      <div class="form-group">
+        <label>総数</label>
+        <input type="number" id="admin-item-total" placeholder="例：2" min="1" value="1">
+      </div>
+      <div class="form-group">
+        <label>アイコン（絵文字を選ぶか、画像をアップロード）</label>
+        <div class="emoji-picker-row" id="emoji-picker"></div>
+        <div style="margin-top:10px;">
+          <div class="image-upload-area" onclick="document.getElementById('admin-img-upload').click()">
+            📁 画像をアップロード（JPG/PNG）
+            <img id="admin-img-preview" class="image-preview" style="display:none;">
+          </div>
+          <input type="file" id="admin-img-upload" accept="image/*" style="display:none;" onchange="handleImageUpload(event)">
+        </div>
+      </div>
+      <input type="hidden" id="admin-item-edit-id" value="">
+      <div style="display:flex;gap:10px;">
+        <button class="btn-primary" onclick="saveItem()">保存する</button>
+        <button class="btn-secondary" id="cancel-edit-btn" onclick="cancelEdit()" style="display:none;">キャンセル</button>
+      </div>
+    </div>
+
+    <div class="admin-card">
+      <h3>登録済み備品一覧</h3>
+      <div class="item-list-admin" id="admin-item-list"></div>
+    </div>
+  </div>
+
+  <!-- 貸出状況タブ -->
+  <div id="tab-status" class="admin-panel">
+    <div class="admin-card" style="overflow-x:auto;">
+      <h3>現在の貸出状況</h3>
+      <div id="status-table-wrap"></div>
+    </div>
+  </div>
+
+  <!-- 履歴タブ -->
+  <div id="tab-history" class="admin-panel">
+    <button class="csv-btn" onclick="exportCSV()">📥 CSVエクスポート</button>
+    <div class="admin-card" style="overflow-x:auto;">
+      <h3>貸出・返却履歴</h3>
+      <div id="history-table-wrap"></div>
+    </div>
+  </div>
+
+  <!-- 設定タブ -->
+  <div id="tab-settings" class="admin-panel">
+    <div class="admin-card">
+      <h3>🔔 ボタン音の設定</h3>
+      <div class="sound-options" id="sound-options"></div>
+    </div>
+    <div class="admin-card">
+      <h3>🔒 管理画面PINの変更</h3>
+      <div class="form-group">
+        <label>新しいPIN（4桁の数字）</label>
+        <input type="number" id="new-pin-input" placeholder="例：1234" maxlength="4"
+          style="width:100%;padding:10px 12px;border:2px solid #dce3ea;border-radius:10px;font-size:18px;letter-spacing:6px;outline:none;">
+      </div>
+      <button class="btn-primary" onclick="savePin()">PINを変更する</button>
+    </div>
+    <div class="admin-card">
+      <h3>🗑 データ管理</h3>
+      <p style="font-size:13px;color:#e74c3c;margin-bottom:12px;">※ 操作は取り消せません。慎重に行ってください。</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="btn-secondary" onclick="clearHistory()">履歴をすべて削除</button>
+        <button class="btn-danger" onclick="clearAll()">全データをリセット</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== モーダル：他にも借りますか？ ===== -->
+<div class="overlay" id="overlay-more">
+  <div class="modal">
+    <h2>他にも借りますか？</h2>
+    <ul class="confirm-list" id="selected-items-list"></ul>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeMoreModal(); openNameModal()">いいえ、これで進む</button>
+      <button class="btn-primary" onclick="closeMoreModal()">はい、追加する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== モーダル：名前入力（貸出） ===== -->
+<div class="overlay" id="overlay-name">
+  <div class="modal">
+    <h2>お名前を入力</h2>
+    <p>選んだ備品を借りる方のお名前を入力してください</p>
+    <input type="text" id="loan-name-input" placeholder="例：山田 太郎" autocomplete="off">
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeNameModal()">キャンセル</button>
+      <button class="btn-primary" onclick="confirmLoan()">貸出する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== モーダル：返却確認 ===== -->
+<div class="overlay" id="overlay-return-confirm">
+  <div class="modal">
+    <h2>返却の確認</h2>
+    <p id="return-confirm-msg"></p>
+    <ul class="confirm-list" id="return-confirm-list"></ul>
+    <p>を返却します。よろしいですか？</p>
+    <div class="modal-btns" style="margin-top:14px;">
+      <button class="btn-secondary" onclick="closeReturnConfirm()">いいえ（戻る）</button>
+      <button class="btn-primary" style="background:linear-gradient(135deg,#27ae60,#219a52);" onclick="executeReturn()">はい、返却する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== モーダル：PIN入力 ===== -->
+<div class="overlay" id="overlay-pin">
+  <div class="modal">
+    <h2>🔒 管理画面</h2>
+    <p>PINを入力してください</p>
+    <div class="pin-display" id="pin-display">────</div>
+    <div class="pin-keypad" id="pin-keypad"></div>
+    <div class="pin-error" id="pin-error"></div>
+    <div style="margin-top:16px;">
+      <button class="btn-secondary" style="width:100%;" onclick="closePinModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== トースト通知 ===== -->
+<div class="toast" id="toast"></div>
+
+<script>
+// =====================================================
+// データ層（Firebase移行時はここだけ差し替え）
+// =====================================================
+const DB = {
+  // --- 備品マスタ ---
+  getItems() {
+    return JSON.parse(localStorage.getItem('eq_items') || '[]');
+  },
+  saveItems(items) {
+    localStorage.setItem('eq_items', JSON.stringify(items));
+  },
+
+  // --- 貸出記録 ---
+  getLoans() {
+    return JSON.parse(localStorage.getItem('eq_loans') || '[]');
+  },
+  saveLoans(loans) {
+    localStorage.setItem('eq_loans', JSON.stringify(loans));
+  },
+
+  // --- 設定 ---
+  getSettings() {
+    const defaults = { sound: 'cowbell', pin: '1234' };
+    return Object.assign(defaults, JSON.parse(localStorage.getItem('eq_settings') || '{}'));
+  },
+  saveSettings(settings) {
+    localStorage.setItem('eq_settings', JSON.stringify(settings));
+  },
+
+  // --- 貸出記録を追加 ---
+  addLoan(borrower, itemId, itemName) {
+    const loans = this.getLoans();
+    const newLoan = {
+      id: 'loan_' + Date.now() + '_' + Math.random().toString(36).substr(2,5),
+      borrower,
+      itemId,
+      itemName,
+      loanAt: new Date().toISOString(),
+      returnAt: null
+    };
+    loans.push(newLoan);
+    this.saveLoans(loans);
+    return newLoan;
+  },
+
+  // --- 返却処理 ---
+  returnLoan(loanId) {
+    const loans = this.getLoans();
+    const idx = loans.findIndex(l => l.id === loanId);
+    if (idx !== -1) {
+      loans[idx].returnAt = new Date().toISOString();
+      this.saveLoans(loans);
+    }
+  },
+
+  // --- 未返却一覧（個人） ---
+  getActiveLoansByBorrower(name) {
+    return this.getLoans().filter(l => l.borrower === name && !l.returnAt);
+  },
+
+  // --- 残数計算 ---
+  getStock(itemId) {
+    const item = this.getItems().find(i => i.id === itemId);
+    if (!item) return 0;
+    const borrowed = this.getLoans().filter(l => l.itemId === itemId && !l.returnAt).length;
+    return item.total - borrowed;
+  },
+
+  // --- 1ヶ月超過未返却チェック ---
+  hasOverdueLoans() {
+    const threshold = new Date();
+    threshold.setMonth(threshold.getMonth() - 1);
+    return this.getLoans().some(l => !l.returnAt && new Date(l.loanAt) < threshold);
+  }
+};
+
+// =====================================================
+// サウンドエンジン（Web Audio API）
+// =====================================================
+const Sound = {
+  ctx: null,
+
+  getCtx() {
+    if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    return this.ctx;
+  },
+
+  play(type) {
+    try {
+      const ctx = this.getCtx();
+      if (ctx.state === 'suspended') ctx.resume();
+      switch(type) {
+        case 'cowbell':   this.playCowbell(ctx); break;
+        case 'windbell':  this.playWindbell(ctx); break;
+        case 'bearbell':  this.playBearbell(ctx); break;
+        default:          this.playCowbell(ctx);
+      }
+    } catch(e) { /* サウンドエラーは無視 */ }
+  },
+
+  // カウベル：金属的な打楽器音
+  playCowbell(ctx) {
+    const now = ctx.currentTime;
+    [562, 845, 1200].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.5, now + 0.3);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + i * 0.02);
+      osc.stop(now + 0.5);
+    });
+  },
+
+  // 風鈴：高音の透き通った音
+  playWindbell(ctx) {
+    const now = ctx.currentTime;
+    [1800, 2200, 2700, 3200].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * 0.06);
+      gain.gain.setValueAtTime(0.0, now + i * 0.06);
+      gain.gain.linearRampToValueAtTime(0.2, now + i * 0.06 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.8);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + i * 0.06);
+      osc.stop(now + i * 0.06 + 0.9);
+    });
+  },
+
+  // 大きな鈴（熊よけベル）：低めの力強い鈴音
+  playBearbell(ctx) {
+    const now = ctx.currentTime;
+    const freqs = [440, 660, 880];
+    freqs.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + i * 0.01);
+      osc.stop(now + 0.8);
+    });
+    // 2打目
+    freqs.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + 0.25);
+      gain.gain.setValueAtTime(0.2, now + 0.25);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + 0.25 + i * 0.01);
+      osc.stop(now + 1.0);
+    });
+  },
+
+  playClick() {
+    const settings = DB.getSettings();
+    this.play(settings.sound);
+  }
+};
+
+// =====================================================
+// トースト通知
+// =====================================================
+function showToast(msg, type = 'default') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = 'toast', 2800);
+}
+
+// =====================================================
+// 画面切替
+// =====================================================
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+function goHome() {
+  selectedItems = [];
+  showScreen('screen-main');
+  renderItems();
+  updateProceedBtn();
+  checkOverdue();
+}
+
+// =====================================================
+// 貸出フロー
+// =====================================================
+let selectedItems = []; // [{id, name}]
+
+function renderItems() {
+  const grid = document.getElementById('item-grid');
+  const items = DB.getItems();
+  grid.innerHTML = '';
+
+  if (items.length === 0) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="empty-icon">📦</div><p>備品が登録されていません<br>管理画面から登録してください</p></div>';
+    return;
+  }
+
+  items.forEach(item => {
+    const stock = DB.getStock(item.id);
+    const isSelected = selectedItems.some(s => s.id === item.id);
+    const unavailable = stock <= 0 && !isSelected;
+
+    const btn = document.createElement('button');
+    btn.className = 'item-btn' + (isSelected ? ' selected' : '') + (unavailable ? ' unavailable' : '');
+    btn.onclick = () => toggleItem(item, btn);
+
+    // アイコン表示
+    let iconHtml = '';
+    if (item.image) {
+      iconHtml = `<img src="${item.image}" class="item-img" alt="${item.name}">`;
+    } else {
+      iconHtml = `<span class="item-emoji">${item.emoji || '📦'}</span>`;
+    }
+
+    const stockClass = stock <= 0 ? 'stock-zero' : '';
+    btn.innerHTML = `
+      <div class="selected-check">✓</div>
+      ${iconHtml}
+      <span class="item-name">${item.name}</span>
+      <span class="item-stock ${stockClass}">残り ${stock}/${item.total}</span>
+    `;
+    grid.appendChild(btn);
+  });
+}
+
+function toggleItem(item, btn) {
+  const stock = DB.getStock(item.id);
+  const idx = selectedItems.findIndex(s => s.id === item.id);
+
+  if (idx === -1) {
+    if (stock <= 0) {
+      showToast('この備品は在庫がありません', 'error');
+      return;
+    }
+    Sound.playClick();
+    selectedItems.push({ id: item.id, name: item.name });
+  } else {
+    Sound.playClick();
+    selectedItems.splice(idx, 1);
+  }
+  renderItems();
+  updateProceedBtn();
+}
+
+function updateProceedBtn() {
+  const btn = document.getElementById('proceed-loan-btn');
+  btn.disabled = selectedItems.length === 0;
+  if (selectedItems.length > 0) {
+    btn.textContent = `${selectedItems.length}点を貸出手続きへ →`;
+  } else {
+    btn.textContent = '貸出手続きへ →';
+  }
+}
+
+function proceedLoan() {
+  Sound.playClick();
+  // 確認モーダル表示
+  const list = document.getElementById('selected-items-list');
+  list.innerHTML = selectedItems.map(i => `<li>📌 ${i.name}</li>`).join('');
+  document.getElementById('overlay-more').classList.add('show');
+}
+
+function closeMoreModal() {
+  document.getElementById('overlay-more').classList.remove('show');
+}
+
+function openNameModal() {
+  const input = document.getElementById('loan-name-input');
+  input.value = '';
+  document.getElementById('overlay-name').classList.add('show');
+  setTimeout(() => input.focus(), 100);
+}
+
+function closeNameModal() {
+  document.getElementById('overlay-name').classList.remove('show');
+}
+
+function confirmLoan() {
+  const name = document.getElementById('loan-name-input').value.trim();
+  if (!name) {
+    showToast('お名前を入力してください', 'error');
+    return;
+  }
+
+  Sound.playClick();
+
+  // タイムスタンプ付きで記録
+  selectedItems.forEach(item => {
+    DB.addLoan(name, item.id, item.name);
+  });
+
+  closeNameModal();
+  showToast(`✅ ${name}さんの貸出を登録しました`, 'success');
+  selectedItems = [];
+  goHome();
+}
+
+// =====================================================
+// 返却フロー
+// =====================================================
+let returnLoanIds = [];
+
+function openReturnFlow() {
+  Sound.playClick();
+  returnLoanIds = [];
+  document.getElementById('return-name-input').value = '';
+  document.getElementById('borrowed-items-area').style.display = 'none';
+  document.getElementById('no-borrowed-msg').style.display = 'none';
+  document.getElementById('return-footer').style.display = 'none';
+  showScreen('screen-return');
+  setTimeout(() => document.getElementById('return-name-input').focus(), 200);
+}
+
+let _returnDebounce = null;
+function loadBorrowedItems() {
+  clearTimeout(_returnDebounce);
+  _returnDebounce = setTimeout(() => {
+    const name = document.getElementById('return-name-input').value.trim();
+    returnLoanIds = [];
+
+    if (!name || name.length < 1) {
+      document.getElementById('borrowed-items-area').style.display = 'none';
+      document.getElementById('no-borrowed-msg').style.display = 'none';
+      document.getElementById('return-footer').style.display = 'none';
+      return;
+    }
+
+    const loans = DB.getActiveLoansByBorrower(name);
+
+    if (loans.length === 0) {
+      document.getElementById('borrowed-items-area').style.display = 'none';
+      document.getElementById('no-borrowed-msg').style.display = 'block';
+      document.getElementById('return-footer').style.display = 'none';
+      return;
+    }
+
+    document.getElementById('no-borrowed-msg').style.display = 'none';
+    document.getElementById('borrowed-items-area').style.display = 'block';
+    document.getElementById('return-footer').style.display = 'flex';
+
+    renderReturnItems(loans);
+    updateReturnBtn();
+  }, 300);
+}
+
+function renderReturnItems(loans) {
+  const grid = document.getElementById('return-item-grid');
+  const items = DB.getItems();
+  grid.innerHTML = '';
+
+  loans.forEach(loan => {
+    const item = items.find(i => i.id === loan.itemId);
+    const isSelected = returnLoanIds.includes(loan.id);
+    const loanDate = new Date(loan.loanAt).toLocaleDateString('ja-JP');
+
+    const btn = document.createElement('button');
+    btn.className = 'return-item-btn' + (isSelected ? ' selected' : '');
+    btn.onclick = () => toggleReturnItem(loan.id, btn);
+
+    let iconHtml = '';
+    if (item && item.image) {
+      iconHtml = `<img src="${item.image}" class="item-img" alt="${loan.itemName}">`;
+    } else {
+      iconHtml = `<span class="item-emoji">${(item && item.emoji) || '📦'}</span>`;
+    }
+
+    btn.innerHTML = `
+      <div class="return-selected-check">✓</div>
+      ${iconHtml}
+      <span class="item-name">${loan.itemName}</span>
+      <span class="loan-date">貸出：${loanDate}</span>
+    `;
+    grid.appendChild(btn);
+  });
+}
+
+function toggleReturnItem(loanId, btn) {
+  Sound.playClick();
+  const idx = returnLoanIds.indexOf(loanId);
+  if (idx === -1) {
+    returnLoanIds.push(loanId);
+  } else {
+    returnLoanIds.splice(idx, 1);
+  }
+  btn.classList.toggle('selected');
+  const check = btn.querySelector('.return-selected-check');
+  if (check) check.style.display = returnLoanIds.includes(loanId) ? 'flex' : 'none';
+  updateReturnBtn();
+}
+
+function updateReturnBtn() {
+  const btn = document.getElementById('proceed-return-btn');
+  btn.disabled = returnLoanIds.length === 0;
+  if (returnLoanIds.length > 0) {
+    btn.textContent = `${returnLoanIds.length}点を返却する →`;
+  } else {
+    btn.textContent = '返却する →';
+  }
+}
+
+function confirmReturn() {
+  Sound.playClick();
+  const name = document.getElementById('return-name-input').value.trim();
+  const loans = DB.getLoans().filter(l => returnLoanIds.includes(l.id));
+
+  document.getElementById('return-confirm-msg').textContent = `${name}さんが以下の`;
+  const list = document.getElementById('return-confirm-list');
+  list.innerHTML = loans.map(l => `<li>📌 ${l.itemName}</li>`).join('');
+
+  document.getElementById('overlay-return-confirm').classList.add('show');
+}
+
+function closeReturnConfirm() {
+  document.getElementById('overlay-return-confirm').classList.remove('show');
+}
+
+function executeReturn() {
+  Sound.playClick();
+  returnLoanIds.forEach(id => DB.returnLoan(id));
+  closeReturnConfirm();
+  const name = document.getElementById('return-name-input').value.trim();
+  showToast(`✅ ${name}さんの返却を処理しました`, 'success');
+  goHome();
+}
+
+// =====================================================
+// 管理画面
+// =====================================================
+let pinBuffer = '';
+
+function openAdmin() {
+  Sound.playClick();
+  const settings = DB.getSettings();
+  // PIN未設定（1234デフォルト）の場合もPIN確認
+  pinBuffer = '';
+  updatePinDisplay();
+  document.getElementById('pin-error').textContent = '';
+  document.getElementById('overlay-pin').classList.add('show');
+  renderPinKeypad();
+}
+
+function closePinModal() {
+  document.getElementById('overlay-pin').classList.remove('show');
+  pinBuffer = '';
+}
+
+function renderPinKeypad() {
+  const kp = document.getElementById('pin-keypad');
+  kp.innerHTML = '';
+  [1,2,3,4,5,6,7,8,9,'DEL',0,'OK'].forEach(k => {
+    const btn = document.createElement('button');
+    btn.className = 'pin-key' + (k === 'DEL' ? ' pin-del' : '') + (k === 'OK' ? ' pin-ok' : '');
+    btn.textContent = k === 'DEL' ? '⌫' : k === 'OK' ? '✓' : k;
+    btn.onclick = () => handlePinKey(k);
+    kp.appendChild(btn);
+  });
+}
+
+function handlePinKey(k) {
+  Sound.playClick();
+  if (k === 'DEL') {
+    pinBuffer = pinBuffer.slice(0, -1);
+  } else if (k === 'OK') {
+    const settings = DB.getSettings();
+    if (pinBuffer === settings.pin) {
+      closePinModal();
+      enterAdminScreen();
+    } else {
+      document.getElementById('pin-error').textContent = 'PINが違います';
+      pinBuffer = '';
+    }
+  } else {
+    if (pinBuffer.length < 4) pinBuffer += String(k);
+  }
+  updatePinDisplay();
+}
+
+function updatePinDisplay() {
+  const disp = document.getElementById('pin-display');
+  let s = '';
+  for (let i = 0; i < 4; i++) {
+    s += i < pinBuffer.length ? '●' : '─';
+  }
+  disp.textContent = s;
+}
+
+function enterAdminScreen() {
+  showScreen('screen-admin');
+  switchTab('tab-items');
+  renderAdminItems();
+  renderStatusTable();
+  renderHistoryTable();
+  renderSoundOptions();
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll('.admin-tab').forEach((t, i) => {
+    const ids = ['tab-items','tab-status','tab-history','tab-settings'];
+    t.classList.toggle('active', ids[i] === tabId);
+  });
+  document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+
+  if (tabId === 'tab-status') renderStatusTable();
+  if (tabId === 'tab-history') renderHistoryTable();
+}
+
+// ===== 備品管理 =====
+const EMOJIS = ['📦','💻','📷','🎥','📺','🖨','🔧','📡','🎤','🔭','📚','🗂','🖥','📱','🎸','⚽','🏀','🧲','🔦','🎯'];
+let selectedEmoji = '📦';
+let uploadedImage = null;
+let editingItemId = null;
+
+function renderEmojiPicker() {
+  const picker = document.getElementById('emoji-picker');
+  picker.innerHTML = EMOJIS.map(e =>
+    `<span class="emoji-option ${e === selectedEmoji && !uploadedImage ? 'selected-emoji' : ''}"
+      onclick="selectEmoji('${e}')">${e}</span>`
+  ).join('');
+}
+
+function selectEmoji(e) {
+  selectedEmoji = e;
+  uploadedImage = null;
+  document.getElementById('admin-img-preview').style.display = 'none';
+  renderEmojiPicker();
+}
+
+function handleImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    uploadedImage = e.target.result;
+    const preview = document.getElementById('admin-img-preview');
+    preview.src = uploadedImage;
+    preview.style.display = 'block';
+    renderEmojiPicker();
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderAdminItems() {
+  renderEmojiPicker();
+  const list = document.getElementById('admin-item-list');
+  const items = DB.getItems();
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>備品が登録されていません</p></div>';
+    return;
+  }
+  list.innerHTML = items.map(item => {
+    const stock = DB.getStock(item.id);
+    const iconHtml = item.image
+      ? `<img src="${item.image}" class="item-icon-img" alt="${item.name}">`
+      : `<span class="item-icon">${item.emoji || '📦'}</span>`;
+    return `
+      <div class="item-row">
+        ${iconHtml}
+        <div class="item-row-info">
+          <div class="name">${item.name}</div>
+          <div class="stock">総数：${item.total} ／ 残り：${stock}</div>
+        </div>
+        <div class="item-row-btns">
+          <button class="edit-btn" onclick="editItem('${item.id}')">編集</button>
+          <button class="delete-btn" onclick="deleteItem('${item.id}')">削除</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function saveItem() {
+  const name = document.getElementById('admin-item-name').value.trim();
+  const total = parseInt(document.getElementById('admin-item-total').value);
+
+  if (!name) { showToast('備品名を入力してください', 'error'); return; }
+  if (!total || total < 1) { showToast('総数を1以上で入力してください', 'error'); return; }
+
+  const items = DB.getItems();
+
+  if (editingItemId) {
+    // 編集
+    const idx = items.findIndex(i => i.id === editingItemId);
+    if (idx !== -1) {
+      items[idx].name = name;
+      items[idx].total = total;
+      if (uploadedImage) items[idx].image = uploadedImage;
+      else { items[idx].image = null; items[idx].emoji = selectedEmoji; }
+    }
+    editingItemId = null;
+    document.getElementById('item-form-title').textContent = '＋ 備品を登録する';
+    document.getElementById('cancel-edit-btn').style.display = 'none';
+  } else {
+    // 新規
+    items.push({
+      id: 'item_' + Date.now(),
+      name,
+      total,
+      emoji: selectedEmoji,
+      image: uploadedImage || null
+    });
+  }
+
+  DB.saveItems(items);
+  document.getElementById('admin-item-name').value = '';
+  document.getElementById('admin-item-total').value = '1';
+  uploadedImage = null;
+  document.getElementById('admin-img-preview').style.display = 'none';
+  document.getElementById('admin-img-upload').value = '';
+  selectedEmoji = '📦';
+  renderEmojiPicker();
+  renderAdminItems();
+  Sound.playClick();
+  showToast('✅ 備品を保存しました', 'success');
+}
+
+function editItem(itemId) {
+  const item = DB.getItems().find(i => i.id === itemId);
+  if (!item) return;
+  editingItemId = itemId;
+  document.getElementById('admin-item-name').value = item.name;
+  document.getElementById('admin-item-total').value = item.total;
+  if (item.image) {
+    uploadedImage = item.image;
+    const preview = document.getElementById('admin-img-preview');
+    preview.src = item.image;
+    preview.style.display = 'block';
+  } else {
+    uploadedImage = null;
+    selectedEmoji = item.emoji || '📦';
+    document.getElementById('admin-img-preview').style.display = 'none';
+  }
+  renderEmojiPicker();
+  document.getElementById('item-form-title').textContent = '✏ 備品を編集する';
+  document.getElementById('cancel-edit-btn').style.display = 'inline-block';
+  document.getElementById('tab-items').scrollTop = 0;
+  document.getElementById('admin-item-name').focus();
+}
+
+function cancelEdit() {
+  editingItemId = null;
+  document.getElementById('admin-item-name').value = '';
+  document.getElementById('admin-item-total').value = '1';
+  uploadedImage = null;
+  selectedEmoji = '📦';
+  document.getElementById('admin-img-preview').style.display = 'none';
+  document.getElementById('item-form-title').textContent = '＋ 備品を登録する';
+  document.getElementById('cancel-edit-btn').style.display = 'none';
+  renderEmojiPicker();
+}
+
+function deleteItem(itemId) {
+  if (!confirm('この備品を削除しますか？\n関連する貸出記録は残ります。')) return;
+  const items = DB.getItems().filter(i => i.id !== itemId);
+  DB.saveItems(items);
+  renderAdminItems();
+  showToast('🗑 備品を削除しました');
+}
+
+// ===== 貸出状況 =====
+function renderStatusTable() {
+  const wrap = document.getElementById('status-table-wrap');
+  const loans = DB.getLoans().filter(l => !l.returnAt);
+  const now = new Date();
+  const threshold = new Date();
+  threshold.setMonth(threshold.getMonth() - 1);
+
+  if (loans.length === 0) {
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><p>現在、貸出中の備品はありません</p></div>';
+    return;
+  }
+
+  let html = `<table class="status-table">
+    <thead><tr><th>借りた人</th><th>備品</th><th>貸出日時</th><th>経過</th></tr></thead><tbody>`;
+
+  loans.sort((a,b) => new Date(a.loanAt) - new Date(b.loanAt)).forEach(loan => {
+    const loanDate = new Date(loan.loanAt);
+    const overdue = loanDate < threshold;
+    const days = Math.floor((now - loanDate) / (1000*60*60*24));
+    html += `<tr class="${overdue ? 'overdue-row' : ''}">
+      <td>${loan.borrower}</td>
+      <td>${loan.itemName}${overdue ? '<span class="overdue-badge">⚠1ヶ月超</span>' : ''}</td>
+      <td>${formatDate(loan.loanAt)}</td>
+      <td>${days}日</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+// ===== 履歴 =====
+function renderHistoryTable() {
+  const wrap = document.getElementById('history-table-wrap');
+  const loans = DB.getLoans().slice().reverse();
+
+  if (loans.length === 0) {
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>履歴がありません</p></div>';
+    return;
+  }
+
+  let html = `<table class="status-table">
+    <thead><tr><th>借りた人</th><th>備品</th><th>貸出日時</th><th>返却日時</th></tr></thead><tbody>`;
+
+  loans.forEach(loan => {
+    html += `<tr>
+      <td>${loan.borrower}</td>
+      <td>${loan.itemName}</td>
+      <td>${formatDate(loan.loanAt)}</td>
+      <td>${loan.returnAt ? formatDate(loan.returnAt) : '<span style="color:#e74c3c;font-weight:600;">未返却</span>'}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.getFullYear() + '/' +
+    String(d.getMonth()+1).padStart(2,'0') + '/' +
+    String(d.getDate()).padStart(2,'0') + ' ' +
+    String(d.getHours()).padStart(2,'0') + ':' +
+    String(d.getMinutes()).padStart(2,'0');
+}
+
+function exportCSV() {
+  const loans = DB.getLoans();
+  const bom = '\uFEFF';
+  const header = '借りた人,備品名,貸出日時,返却日時\n';
+  const rows = loans.map(l =>
+    `"${l.borrower}","${l.itemName}","${formatDate(l.loanAt)}","${l.returnAt ? formatDate(l.returnAt) : '未返却'}"`
+  ).join('\n');
+  const blob = new Blob([bom + header + rows], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '備品管理_履歴_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ===== サウンド設定 =====
+const SOUNDS = [
+  { id: 'cowbell',  label: 'カウベル',       desc: 'カンカン鳴る金属的な打楽器音（デフォルト）' },
+  { id: 'windbell', label: '風鈴',           desc: '高音の透き通った涼やかな音' },
+  { id: 'bearbell', label: '大きな鈴（熊よけ）', desc: '低めの力強い鈴の音' },
+];
+
+function renderSoundOptions() {
+  const settings = DB.getSettings();
+  const wrap = document.getElementById('sound-options');
+  wrap.innerHTML = SOUNDS.map(s => `
+    <div class="sound-option ${s.id === settings.sound ? 'selected-sound' : ''}"
+      onclick="selectSound('${s.id}')">
+      <input type="radio" name="sound" value="${s.id}" ${s.id === settings.sound ? 'checked' : ''}>
+      <div style="flex:1;">
+        <div class="sound-label">${s.label}</div>
+        <div class="sound-desc">${s.desc}</div>
+      </div>
+      <button class="test-sound-btn" onclick="event.stopPropagation();testSound('${s.id}')">試聴</button>
+    </div>
+  `).join('');
+}
+
+function selectSound(id) {
+  const settings = DB.getSettings();
+  settings.sound = id;
+  DB.saveSettings(settings);
+  renderSoundOptions();
+  Sound.playClick();
+}
+
+function testSound(id) {
+  Sound.play(id);
+}
+
+// ===== PIN設定 =====
+function savePin() {
+  const val = document.getElementById('new-pin-input').value.trim();
+  if (!/^\d{4}$/.test(val)) {
+    showToast('4桁の数字を入力してください', 'error');
+    return;
+  }
+  const settings = DB.getSettings();
+  settings.pin = val;
+  DB.saveSettings(settings);
+  document.getElementById('new-pin-input').value = '';
+  showToast('✅ PINを変更しました', 'success');
+}
+
+// ===== データ管理 =====
+function clearHistory() {
+  if (!confirm('全ての履歴を削除しますか？\nこの操作は取り消せません。')) return;
+  DB.saveLoans([]);
+  showToast('🗑 履歴を削除しました');
+  renderHistoryTable();
+  renderStatusTable();
+}
+
+function clearAll() {
+  if (!confirm('全データをリセットしますか？\n備品情報・履歴・設定が全て削除されます。\nこの操作は取り消せません。')) return;
+  localStorage.removeItem('eq_items');
+  localStorage.removeItem('eq_loans');
+  localStorage.removeItem('eq_settings');
+  showToast('🗑 全データをリセットしました');
+  goHome();
+}
+
+// ===== 1ヶ月超過バッジ =====
+function checkOverdue() {
+  const badge = document.getElementById('overdue-badge');
+  badge.style.display = DB.hasOverdueLoans() ? 'block' : 'none';
+}
+
+// =====================================================
+// 初期化
+// =====================================================
+// =====================================================
+// 初期備品データ投入（初回起動時のみ）
+// =====================================================
+function seedInitialItems() {
+  if (localStorage.getItem('eq_seeded_v1_1_0')) return;
+  const existing = DB.getItems();
+  if (existing.length > 0) {
+    localStorage.setItem('eq_seeded_v1_1_0', '1');
+    return;
+  }
+  const initialItems = [
+    { id: 'item_seed_001', name: 'PC',               total: 5,  emoji: '💻', image: null },
+    { id: 'item_seed_002', name: 'プロジェクター',    total: 2,  emoji: '📽', image: null },
+    { id: 'item_seed_003', name: 'HDMIケーブル',      total: 3,  emoji: '🔌', image: null },
+    { id: 'item_seed_004', name: 'iPadコネクタ',      total: 2,  emoji: '🔗', image: null },
+    { id: 'item_seed_005', name: 'ポータブルドライブ', total: 2,  emoji: '💾', image: null },
+    { id: 'item_seed_006', name: 'カメラ',            total: 9,  emoji: '📷', image: null },
+    { id: 'item_seed_007', name: '延長コード',        total: 3,  emoji: '🔌', image: null },
+    { id: 'item_seed_008', name: 'モバイルバッテリー', total: 5,  emoji: '🔋', image: null },
+    { id: 'item_seed_009', name: 'ドラムコード',      total: 2,  emoji: '🎵', image: null },
+    { id: 'item_seed_010', name: '充電器',            total: 13, emoji: '⚡', image: null },
+  ];
+  DB.saveItems(initialItems);
+  localStorage.setItem('eq_seeded_v1_1_0', '1');
+}
+
+function init() {
+  seedInitialItems();
+  renderItems();
+  updateProceedBtn();
+  checkOverdue();
+
+  // Enterキーで確定
+  document.getElementById('loan-name-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmLoan();
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
