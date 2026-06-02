@@ -912,11 +912,16 @@ body {
 // =====================================================
 let _fsDb = null;
 
-function updateSyncStatus(status) {
+function updateSyncStatus(status, detail = '') {
   const el = document.getElementById('sync-indicator');
   if (!el) return;
   const icons  = { syncing: '⏳', synced: '☁️', offline: '📴', error: '⚠️' };
-  const titles = { syncing: '同期中...', synced: 'Firestore同期済み', offline: 'オフライン（ローカル保存）', error: '同期エラー' };
+  const titles = {
+    syncing: '同期中...',
+    synced:  'Firestore同期済み',
+    offline: 'オフライン（ローカル保存）',
+    error:   detail ? `同期エラー: ${detail}` : '同期エラー'
+  };
   el.textContent = icons[status]  || '';
   el.title       = titles[status] || '';
 }
@@ -927,8 +932,18 @@ async function syncToFirestore(key, value) {
     await _fsDb.collection('data').doc(key).set({ value: value });
     updateSyncStatus('synced');
   } catch(e) {
-    console.warn('Firestore書き込みエラー:', e);
-    updateSyncStatus('error');
+    const code = e.code || 'unknown';
+    const msg  = e.message || '不明なエラー';
+    console.error('Firestore書き込みエラー:', code, e);
+    updateSyncStatus('error', code);
+    // エラーコードに応じたメッセージをトーストで表示
+    const codeMsg = {
+      'permission-denied':  'セキュリティルール拒否 (permission-denied)',
+      'resource-exhausted': '容量制限超過 (resource-exhausted)',
+      'invalid-argument':   'データサイズ超過 (invalid-argument)',
+      'unavailable':        'ネットワーク接続エラー (unavailable)',
+    };
+    showToast('⚠️ Firestore同期失敗: ' + (codeMsg[code] || code), 'error');
   }
 }
 
