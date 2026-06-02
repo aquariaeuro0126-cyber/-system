@@ -997,15 +997,14 @@ async function clearFirestoreData() {
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     _fsDb = firebase.firestore();
 
-    // 同期戦略：ローカルデータがある端末ではローカルを優先
-    const hasLocalData  = localStorage.getItem('eq_items') !== null;
-    const itemsSnap     = await _fsDb.collection('data').doc('items').get();
+    // 同期戦略：Firestore優先（Firestoreにデータがあれば常にFirestoreが正）
+    const itemsSnap = await _fsDb.collection('data').doc('items').get();
 
-    if (!hasLocalData && itemsSnap.exists) {
-      // ローカルデータなし（新しい端末）→ Firestoreから読み込み
+    if (itemsSnap.exists) {
+      // Firestoreにデータあり → Firestoreを正とする（クロスデバイス同期）
       await syncFromFirestore();
     } else {
-      // ローカルデータあり → ローカルを正としてFirestoreに同期
+      // Firestoreが空（初回セットアップのみ）→ ローカルをFirestoreに移行
       await migrateLocalToFirestore();
     }
     // 管理画面表示中は再描画しない（保存ボタン等への干渉を防ぐ）
