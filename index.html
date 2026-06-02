@@ -925,8 +925,10 @@ async function syncToFirestore(key, value) {
   if (!_fsDb) return;
   try {
     await _fsDb.collection('data').doc(key).set({ value: value });
+    updateSyncStatus('synced');
   } catch(e) {
     console.warn('Firestore書き込みエラー:', e);
+    updateSyncStatus('error');
   }
 }
 
@@ -995,13 +997,15 @@ async function clearFirestoreData() {
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     _fsDb = firebase.firestore();
 
-    // Firestoreにデータがあるか確認
-    const itemsSnap = await _fsDb.collection('data').doc('items').get();
-    if (itemsSnap.exists) {
-      // Firestoreにデータあり → Firestoreから読み込み
+    // 同期戦略：ローカルデータがある端末ではローカルを優先
+    const hasLocalData  = localStorage.getItem('eq_items') !== null;
+    const itemsSnap     = await _fsDb.collection('data').doc('items').get();
+
+    if (!hasLocalData && itemsSnap.exists) {
+      // ローカルデータなし（新しい端末）→ Firestoreから読み込み
       await syncFromFirestore();
     } else {
-      // Firestoreが空 → LocalStorageのデータをFirestoreに移行
+      // ローカルデータあり → ローカルを正としてFirestoreに同期
       await migrateLocalToFirestore();
     }
     // 管理画面表示中は再描画しない（保存ボタン等への干渉を防ぐ）
