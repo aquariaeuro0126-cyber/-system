@@ -902,14 +902,15 @@ body {
 <!-- ===== トースト通知 ===== -->
 <div class="toast" id="toast"></div>
 
+<!-- Firebase compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
 <script>
 // =====================================================
-// Firebase 統合レイヤー（v1.4.0）
+// Firebase 統合レイヤー（v1.4.0 compat SDK）
 // =====================================================
 let _fsDb = null;
-let _fsDocFn = null;
-let _fsGetDocFn = null;
-let _fsSetDocFn = null;
 
 function updateSyncStatus(status) {
   const el = document.getElementById('sync-indicator');
@@ -921,25 +922,25 @@ function updateSyncStatus(status) {
 }
 
 async function syncToFirestore(key, value) {
-  if (!_fsDb || !_fsSetDocFn || !_fsDocFn) return;
+  if (!_fsDb) return;
   try {
-    await _fsSetDocFn(_fsDocFn(_fsDb, 'data', key), { value: value });
+    await _fsDb.collection('data').doc(key).set({ value: value });
   } catch(e) {
     console.warn('Firestore書き込みエラー:', e);
   }
 }
 
 async function syncFromFirestore() {
-  if (!_fsDb || !_fsGetDocFn || !_fsDocFn) return;
+  if (!_fsDb) return;
   try {
     const [itemsSnap, loansSnap, settingsSnap] = await Promise.all([
-      _fsGetDocFn(_fsDocFn(_fsDb, 'data', 'items')),
-      _fsGetDocFn(_fsDocFn(_fsDb, 'data', 'loans')),
-      _fsGetDocFn(_fsDocFn(_fsDb, 'data', 'settings'))
+      _fsDb.collection('data').doc('items').get(),
+      _fsDb.collection('data').doc('loans').get(),
+      _fsDb.collection('data').doc('settings').get()
     ]);
-    if (itemsSnap.exists())    localStorage.setItem('eq_items',    JSON.stringify(itemsSnap.data().value));
-    if (loansSnap.exists())    localStorage.setItem('eq_loans',    JSON.stringify(loansSnap.data().value));
-    if (settingsSnap.exists()) localStorage.setItem('eq_settings', JSON.stringify(settingsSnap.data().value));
+    if (itemsSnap.exists)    localStorage.setItem('eq_items',    JSON.stringify(itemsSnap.data().value));
+    if (loansSnap.exists)    localStorage.setItem('eq_loans',    JSON.stringify(loansSnap.data().value));
+    if (settingsSnap.exists) localStorage.setItem('eq_settings', JSON.stringify(settingsSnap.data().value));
     updateSyncStatus('synced');
   } catch(e) {
     console.warn('Firestore読み込みエラー:', e);
@@ -979,41 +980,35 @@ async function clearFirestoreData() {
   }
 }
 
-// Firebase 非同期初期化
+// Firebase 初期化（compat SDK）
 (async () => {
   updateSyncStatus('syncing');
   try {
-    const [appMod, fsMod] = await Promise.all([
-      import('https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js'),
-      import('https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js')
-    ]);
-    const { initializeApp } = appMod;
-    const { getFirestore, doc, getDoc, setDoc } = fsMod;
-    _fsDocFn    = doc;
-    _fsGetDocFn = getDoc;
-    _fsSetDocFn = setDoc;
-    const app = initializeApp({
+    const firebaseConfig = {
       apiKey:            "AIzaSyCIJ6HtdVaxXeEv6xsudNqJbSeqWqtC1cU",
       authDomain:        "school-equipment-system.firebaseapp.com",
       projectId:         "school-equipment-system",
       storageBucket:     "school-equipment-system.firebasestorage.app",
       messagingSenderId: "968491122527",
       appId:             "1:968491122527:web:eff7b6d9d71d73ca7d80ea"
-    });
-    _fsDb = getFirestore(app);
+    };
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    _fsDb = firebase.firestore();
 
     // Firestoreにデータがあるか確認
-    const itemsSnap = await _fsGetDocFn(_fsDocFn(_fsDb, 'data', 'items'));
-    if (itemsSnap.exists()) {
-      // Firestoreにデータあり → Firestoreから読み込み（Firestoreが正）
+    const itemsSnap = await _fsDb.collection('data').doc('items').get();
+    if (itemsSnap.exists) {
+      // Firestoreにデータあり → Firestoreから読み込み
       await syncFromFirestore();
     } else {
       // Firestoreが空 → LocalStorageのデータをFirestoreに移行
       await migrateLocalToFirestore();
     }
-    // データ更新の可能性があるため再描画
-    renderItems();
-    checkOverdue();
+    // 管理画面表示中は再描画しない（保存ボタン等への干渉を防ぐ）
+    if (!document.getElementById('screen-admin').classList.contains('active')) {
+      renderItems();
+      checkOverdue();
+    }
   } catch(e) {
     console.warn('Firebase初期化エラー:', e);
     updateSyncStatus('offline');
