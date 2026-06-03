@@ -905,12 +905,24 @@ body {
 <!-- Firebase compat SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
 
 <script>
 // =====================================================
-// Firebase 統合レイヤー（v1.4.0 compat SDK）
+// Firebase 統合レイヤー（v1.5.0 compat SDK + Storage）
 // =====================================================
-let _fsDb = null;
+let _fsDb      = null;
+let _fsStorage = null;
+
+// Firebase Storage にファイルをアップロードしてダウンロードURLを返す
+async function uploadToStorage(path, base64DataURL) {
+  if (!_fsStorage) throw new Error('Storage未初期化');
+  const ref      = _fsStorage.ref(path);
+  const response = await fetch(base64DataURL);
+  const blob     = await response.blob();
+  const snapshot = await ref.put(blob);
+  return await snapshot.ref.getDownloadURL();
+}
 
 function updateSyncStatus(status, detail = '') {
   const el = document.getElementById('sync-indicator');
@@ -929,21 +941,22 @@ function updateSyncStatus(status, detail = '') {
 async function syncToFirestore(key, value) {
   if (!_fsDb) return;
   try {
-    await _fsDb.collection('data').doc(key).set({ value: value });
+    // Base64バイナリを除外してFirestoreに書き込む（1MiB制限対策）
+    let firestoreValue = value;
+    if (key === 'items') {
+      // 備品画像（Base64）を除外、Storage URL（imageUrl）は保持
+      firestoreValue = value.map(({ image, ...rest }) => rest);
+    } else if (key === 'settings') {
+      // カスタム音声（Base64）を除外、Storage URL（customSoundUrl）は保持
+      const { customSound, ...rest } = value;
+      firestoreValue = rest;
+    }
+    await _fsDb.collection('data').doc(key).set({ value: firestoreValue });
     updateSyncStatus('synced');
   } catch(e) {
     const code = e.code || 'unknown';
-    const msg  = e.message || '不明なエラー';
     console.error('Firestore書き込みエラー:', code, e);
     updateSyncStatus('error', code);
-    // エラーコードに応じたメッセージをトーストで表示
-    const codeMsg = {
-      'permission-denied':  'セキュリティルール拒否 (permission-denied)',
-      'resource-exhausted': '容量制限超過 (resource-exhausted)',
-      'invalid-argument':   'データサイズ超過 (invalid-argument)',
-      'unavailable':        'ネットワーク接続エラー (unavailable)',
-    };
-    showToast('⚠️ Firestore同期失敗: ' + (codeMsg[code] || code), 'error');
   }
 }
 
@@ -955,12 +968,31 @@ async function syncFromFirestore() {
       _fsDb.collection('data').doc('loans').get(),
       _fsDb.collection('data').doc('settings').get()
     ]);
-    if (itemsSnap.exists)    localStorage.setItem('eq_items',    JSON.stringify(itemsSnap.data().value));
-    if (loansSnap.exists)    localStorage.setItem('eq_loans',    JSON.stringify(loansSnap.data().value));
-    if (settingsSnap.exists) localStorage.setItem('eq_settings', JSON.stringify(settingsSnap.data().value));
+    if (itemsSnap.exists) {
+      // Firestoreのアイテム + ローカルのBase64画像をマージ（ローカル画像を保持）
+      const localItems = JSON.parse(localStorage.getItem('eq_items') || '[]');
+      const merged = itemsSnap.data().value.map(fsItem => {
+        const local = localItems.find(li => li.id === fsItem.id);
+        return local?.image ? { ...fsItem, image: local.image } : fsItem;
+      });
+      localStorage.setItem('eq_items', JSON.stringify(merged));
+    }
+    if (loansSnap.exists) {
+      localStorage.setItem('eq_loans', JSON.stringify(loansSnap.data().value));
+    }
+    if (settingsSnap.exists) {
+      // Firestoreの設定 + ローカルのBase64音声をマージ（ローカル音声を保持）
+      const localSettings = JSON.parse(localStorage.getItem('eq_settings') || '{}');
+      const fsSettings    = settingsSnap.data().value;
+      const merged = { ...fsSettings };
+      if (localSettings.customSound)      merged.customSound      = localSettings.customSound;
+      if (localSettings.customSoundName)  merged.customSoundName  = localSettings.customSoundName;
+      if (localSettings.customSoundLabel) merged.customSoundLabel = localSettings.customSoundLabel;
+      localStorage.setItem('eq_settings', JSON.stringify(merged));
+    }
     updateSyncStatus('synced');
   } catch(e) {
-    console.warn('Firestore読み込みエラー:', e);
+    console.error('Firestore読み込みエラー:', e);
     updateSyncStatus('error');
   }
 }
@@ -1010,7 +1042,8 @@ async function clearFirestoreData() {
       appId:             "1:968491122527:web:eff7b6d9d71d73ca7d80ea"
     };
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-    _fsDb = firebase.firestore();
+    _fsDb      = firebase.firestore();
+    _fsStorage = firebase.storage();
 
     // 同期戦略：Firestore優先（Firestoreにデータがあれば常にFirestoreが正）
     const itemsSnap = await _fsDb.collection('data').doc('items').get();
@@ -1141,12 +1174,13 @@ const Sound = {
     } catch(e) { /* サウンドエラーは無視 */ }
   },
 
-  // カスタム音声（アップロード済みBase64）
+  // カスタム音声（Base64またはStorage URL）
   playCustom() {
     try {
       const settings = DB.getSettings();
-      if (!settings.customSound) return;
-      const audio = new Audio(settings.customSound);
+      const src = settings.customSound || settings.customSoundUrl;
+      if (!src) return;
+      const audio = new Audio(src);
       audio.volume = 0.8;
       audio.play().catch(() => {});
     } catch(e) {}
@@ -1338,10 +1372,11 @@ function renderItems() {
     btn.className = 'item-btn' + (isSelected ? ' selected' : '') + (unavailable ? ' unavailable' : '');
     btn.onclick = () => toggleItem(item, btn);
 
-    // アイコン表示
+    // アイコン表示（Storage URL優先、Base64フォールバック）
+    const imgSrc = item.imageUrl || item.image;
     let iconHtml = '';
-    if (item.image) {
-      iconHtml = `<img src="${item.image}" class="item-img" alt="${item.name}">`;
+    if (imgSrc) {
+      iconHtml = `<img src="${imgSrc}" class="item-img" alt="${item.name}">`;
     } else {
       iconHtml = `<span class="item-emoji">${item.emoji || '📦'}</span>`;
     }
@@ -1632,9 +1667,10 @@ function switchTab(tabId) {
 
 // ===== 備品管理 =====
 const EMOJIS = ['📦','💻','📷','🎥','📺','🖨','🔧','📡','🎤','🔭','📚','🗂','🖥','📱','🎸','⚽','🏀','🧲','🔦','🎯'];
-let selectedEmoji = '📦';
-let uploadedImage = null;
-let editingItemId = null;
+let selectedEmoji    = '📦';
+let uploadedImage    = null;  // 新規選択画像のBase64
+let existingImageUrl = null;  // 編集中アイテムの既存Storage URL
+let editingItemId    = null;
 
 function renderEmojiPicker() {
   const picker = document.getElementById('emoji-picker');
@@ -1675,8 +1711,9 @@ function renderAdminItems() {
   }
   list.innerHTML = items.map(item => {
     const stock = DB.getStock(item.id);
-    const iconHtml = item.image
-      ? `<img src="${item.image}" class="item-icon-img" alt="${item.name}">`
+    const adminImgSrc = item.imageUrl || item.image;
+    const iconHtml = adminImgSrc
+      ? `<img src="${adminImgSrc}" class="item-icon-img" alt="${item.name}">`
       : `<span class="item-icon">${item.emoji || '📦'}</span>`;
     return `
       <div class="item-row">
@@ -1694,42 +1731,66 @@ function renderAdminItems() {
   }).join('');
 }
 
-function saveItem() {
-  const name = document.getElementById('admin-item-name').value.trim();
+async function saveItem() {
+  const name  = document.getElementById('admin-item-name').value.trim();
   const total = parseInt(document.getElementById('admin-item-total').value);
 
-  if (!name) { showToast('備品名を入力してください', 'error'); return; }
+  if (!name)  { showToast('備品名を入力してください', 'error'); return; }
   if (!total || total < 1) { showToast('総数を1以上で入力してください', 'error'); return; }
 
-  const items = DB.getItems();
+  const items    = DB.getItems();
+  const targetId = editingItemId || ('item_' + Date.now());
+
+  // 新しい画像が選択されていればStorageにアップロード
+  let newImageUrl = existingImageUrl;  // デフォルトは既存URLを保持
+  if (uploadedImage && _fsStorage) {
+    try {
+      updateSyncStatus('syncing');
+      newImageUrl = await uploadToStorage(`items/${targetId}`, uploadedImage);
+    } catch(e) {
+      console.warn('Storage画像アップロード失敗:', e);
+      newImageUrl = existingImageUrl;  // 失敗時は既存URLを保持
+    }
+  }
 
   if (editingItemId) {
     // 編集
     const idx = items.findIndex(i => i.id === editingItemId);
     if (idx !== -1) {
-      items[idx].name = name;
+      items[idx].name  = name;
       items[idx].total = total;
-      if (uploadedImage) items[idx].image = uploadedImage;
-      else { items[idx].image = null; items[idx].emoji = selectedEmoji; }
+      if (uploadedImage) {
+        items[idx].image    = uploadedImage;  // ローカル表示用Base64
+        items[idx].imageUrl = newImageUrl;    // Storage URL
+      } else if (existingImageUrl) {
+        items[idx].imageUrl = existingImageUrl;  // 画像変更なし → 既存URLを保持
+      } else {
+        items[idx].image    = null;
+        items[idx].imageUrl = null;
+        items[idx].emoji    = selectedEmoji;
+      }
     }
-    editingItemId = null;
+    editingItemId    = null;
+    existingImageUrl = null;
     document.getElementById('item-form-title').textContent = '＋ 備品を登録する';
     document.getElementById('cancel-edit-btn').style.display = 'none';
   } else {
     // 新規
     items.push({
-      id: 'item_' + Date.now(),
+      id:       targetId,
       name,
       total,
-      emoji: selectedEmoji,
-      image: uploadedImage || null
+      emoji:    selectedEmoji,
+      image:    uploadedImage || null,
+      imageUrl: newImageUrl   || null
     });
   }
 
   DB.saveItems(items);
   document.getElementById('admin-item-name').value = '';
   document.getElementById('admin-item-total').value = '1';
-  uploadedImage = null;
+  uploadedImage    = null;
+  existingImageUrl = null;
   document.getElementById('admin-img-preview').style.display = 'none';
   document.getElementById('admin-img-upload').value = '';
   selectedEmoji = '📦';
@@ -1745,14 +1806,17 @@ function editItem(itemId) {
   editingItemId = itemId;
   document.getElementById('admin-item-name').value = item.name;
   document.getElementById('admin-item-total').value = item.total;
-  if (item.image) {
-    uploadedImage = item.image;
+  const editImgSrc = item.image || item.imageUrl;
+  if (editImgSrc) {
+    uploadedImage    = item.image    || null;
+    existingImageUrl = item.imageUrl || null;
     const preview = document.getElementById('admin-img-preview');
-    preview.src = item.image;
+    preview.src = editImgSrc;
     preview.style.display = 'block';
   } else {
-    uploadedImage = null;
-    selectedEmoji = item.emoji || '📦';
+    uploadedImage    = null;
+    existingImageUrl = null;
+    selectedEmoji    = item.emoji || '📦';
     document.getElementById('admin-img-preview').style.display = 'none';
   }
   renderEmojiPicker();
@@ -1763,7 +1827,8 @@ function editItem(itemId) {
 }
 
 function cancelEdit() {
-  editingItemId = null;
+  editingItemId    = null;
+  existingImageUrl = null;
   document.getElementById('admin-item-name').value = '';
   document.getElementById('admin-item-total').value = '1';
   uploadedImage = null;
@@ -1880,10 +1945,11 @@ function renderSoundOptions() {
   const settings = DB.getSettings();
   const wrap = document.getElementById('sound-options');
   wrap.innerHTML = SOUNDS.map(s => {
-    const isCustom = s.id === 'custom';
-    const noCustom = isCustom && !settings.customSound;
+    const isCustom  = s.id === 'custom';
+    const hasCustom = settings.customSound || settings.customSoundUrl;
+    const noCustom  = isCustom && !hasCustom;
     // カスタム音声の表示名：customSoundLabel > customSoundName > デフォルト
-    const label = isCustom && settings.customSound
+    const label = isCustom && hasCustom
       ? (settings.customSoundLabel || settings.customSoundName || 'カスタム音声')
       : s.label;
     return `
@@ -1919,11 +1985,24 @@ function handleSoundUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
+    const base64   = e.target.result;
     const settings = DB.getSettings();
-    settings.customSound = e.target.result;
+    settings.customSound     = base64;    // ローカル再生用Base64
     settings.customSoundName = file.name;
-    delete settings.customSoundLabel; // 新規アップロード時は表示名をリセット
+    delete settings.customSoundLabel;     // 新規アップロード時は表示名をリセット
+
+    // StorageにアップロードしてURLを保存
+    if (_fsStorage) {
+      try {
+        updateSyncStatus('syncing');
+        settings.customSoundUrl = await uploadToStorage('audio/customSound', base64);
+      } catch(e) {
+        console.warn('Storage音声アップロード失敗:', e);
+        delete settings.customSoundUrl;
+      }
+    }
+
     DB.saveSettings(settings);
     updateCustomSoundLabel();
     renderSoundOptions();
@@ -1937,6 +2016,7 @@ function clearCustomSound() {
   delete settings.customSound;
   delete settings.customSoundName;
   delete settings.customSoundLabel;
+  delete settings.customSoundUrl;
   DB.saveSettings(settings);
   document.getElementById('custom-sound-upload').value = '';
   updateCustomSoundLabel();
@@ -1949,13 +2029,14 @@ function updateCustomSoundLabel() {
   const nameEl = document.getElementById('custom-sound-name');
   const editArea = document.getElementById('custom-sound-label-edit');
   const labelInput = document.getElementById('custom-sound-label-input');
-  if (settings.customSound) {
+  const hasAny = settings.customSound || settings.customSoundUrl;
+  if (hasAny) {
     const displayName = settings.customSoundLabel || settings.customSoundName || '';
-    if (nameEl) nameEl.textContent = `登録済み：${displayName}`;
-    if (editArea) editArea.style.display = 'block';
+    if (nameEl)     nameEl.textContent = `登録済み：${displayName}`;
+    if (editArea)   editArea.style.display = 'block';
     if (labelInput) labelInput.value = settings.customSoundLabel || settings.customSoundName || '';
   } else {
-    if (nameEl) nameEl.textContent = '';
+    if (nameEl)   nameEl.textContent = '';
     if (editArea) editArea.style.display = 'none';
   }
 }
