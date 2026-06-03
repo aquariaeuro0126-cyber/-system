@@ -108,3 +108,61 @@ if (!document.getElementById('screen-admin').classList.contains('active')) {
   - 画像アップロード処理の変更（Base64→StorageURL）
   - セキュリティルールの設定（Firestoreと同様のテストモード）
   - 既存のBase64画像データの移行処理
+
+### 2026-06-02（第2セッション：Firebase Storage連携の追加）
+
+#### 背景と出発点
+前セッションでFirestore連携（v1.4.0）を実装したが、管理画面での編集時に「データサイズ超過（invalid-argument）」の同期エラーが発生した。原因究明のためエラーコードをトーストで表示する診断コードを追加し、原因がFirestoreの1MiB制限であることを特定した。
+
+根本的な問題は「画像（Base64）・カスタム音声（Base64）をそのままFirestoreドキュメントに保存しようとしていたこと」。ユーザーの当初の動機が「備品画像を複数端末で共有したい」だったため、単純にBase64を除外するだけでは要件を満たせない。
+
+#### 解決策の選定（プランA vs プランB）
+
+**プランA（画像圧縮）**：canvas APIで400×400px・JPEG80%に圧縮してFirestoreに保存。追加設定不要・実装が小さい。
+
+**プランB（Firebase Storage）**：画像・音声をStorageに保存しURLをFirestoreに持つ。元画質のまま同期可能。SDK追加・セキュリティルール設定が必要。
+
+**選択：プランB**。ユーザーの要望が「元の画像を他端末でも見たい」だったため。
+
+なお、本セッションで「Firebase Storageは有料プランが必要」という前セッションの誤った説明を訂正した。実際にはSpark（無料）プランで5GBまで利用可能。
+
+#### Firebase Storageのセットアップ（ユーザー作業）
+
+Firebase Consoleで「Storage」→「始める」→テストモード→ロケーション選択の手順を案内。「料金不要のロケーション」の選択肢がUS東・西・中部の3つのみ（アジアは有料プランのみ）だったため、`us-central1`を選択。テストモードのセキュリティルールを手動で有効期限まで設定して完了。
+
+#### Firebase Storage実装（コード変更17箇所）
+
+**設計の考え方**：
+
+データ構造を以下のように分離した：
+- `image`（Base64）：LocalStorageのみ保持・高速なローカル表示用
+- `imageUrl`（Storage URL）：Firestoreに保存・他端末との同期用
+- `customSound`（Base64）：LocalStorageのみ保持・オフライン再生用
+- `customSoundUrl`（Storage URL）：Firestoreに保存・他端末との同期用
+
+Firestoreへの書き込み時はBase64フィールドを除外し、読み込み時はFirestoreデータとローカルBase64をマージする設計にした。これにより：
+- アップロードした端末：Base64（高速）とURLの両方で表示・再生可能
+- 他の端末：URLで画像・音声を取得（Storage経由）
+
+**実装した変更の概要**：
+
+1. Firebase Storage SDK（`firebase-storage-compat.js`）の追加
+2. `uploadToStorage(path, base64)`関数：Base64→Blob変換→Storage putでアップロードしてURLを返す
+3. `syncToFirestore()`：itemsのBase64 `image`、settingsの`customSound`を除外してFirestoreに書き込む
+4. `syncFromFirestore()`：読み込み時にローカルBase64と`imageUrl`/`customSoundUrl`をマージ
+5. `saveItem()`：async化。新規画像があればStorageにアップロードして`imageUrl`に格納。`existingImageUrl`変数を追加し編集時の既存URLを保持
+6. `handleSoundUpload()`：async化。Storageに音声アップロードして`customSoundUrl`を保存
+7. `renderItems()`/`renderAdminItems()`/`editItem()`：`imageUrl || image`で表示
+8. `playCustom()`/`renderSoundOptions()`/`updateCustomSoundLabel()`：`customSoundUrl`にも対応
+9. `clearCustomSound()`：`customSoundUrl`も同時に削除
+
+**`existingImageUrl`変数の追加理由**：
+編集モードで既存画像を持つアイテムを開いた時、ユーザーが新しい画像を選ばずに保存した場合、既存の`imageUrl`を消さないよう保持する必要があった。`uploadedImage`（Base64）とは別に管理する変数として追加。
+
+#### 決定事項・次のタスク
+- v1.5.0としてコミット`46cb586`をGitHubにpush済み
+- Firebase StorageのセキュリティルールはFirestoreと同様のテストモード（有効期限付き）
+- 次のタスク：動作確認（翌日予定）
+  - 管理画面で画像付き備品を保存 → ☁️が表示されるか確認
+  - 別端末でアクセス → 同じ画像が表示されるか確認
+  - カスタム音声のアップロード → 別端末で再生できるか確認
