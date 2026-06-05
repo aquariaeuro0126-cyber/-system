@@ -1038,6 +1038,7 @@ async function clearFirestoreData() {
 // Firebase 初期化（compat SDK）
 (async () => {
   updateSyncStatus('syncing');
+  let firebaseOk = false;
   try {
     const firebaseConfig = {
       apiKey:            "AIzaSyCIJ6HtdVaxXeEv6xsudNqJbSeqWqtC1cU",
@@ -1055,20 +1056,25 @@ async function clearFirestoreData() {
     const itemsSnap = await _fsDb.collection('data').doc('items').get();
 
     if (itemsSnap.exists) {
-      // Firestoreにデータあり → Firestoreを正とする（クロスデバイス同期）
+      // Firestoreにデータあり → Firestoreを正とする（seedで上書きしない）
       await syncFromFirestore();
     } else {
-      // Firestoreが空（初回セットアップのみ）→ ローカルをFirestoreに移行
+      // Firestoreが空（本当の初回）→ 初期データを投入してからクラウドに移行
+      seedInitialItems();
       await migrateLocalToFirestore();
     }
-    // 管理画面表示中は再描画しない（保存ボタン等への干渉を防ぐ）
-    if (!document.getElementById('screen-admin').classList.contains('active')) {
-      renderItems();
-      checkOverdue();
-    }
+    firebaseOk = true;
   } catch(e) {
     console.warn('Firebase初期化エラー:', e);
     updateSyncStatus('offline');
+  }
+  // Firebase利用不可（オフライン等）→ ローカルのみで初期データ投入
+  if (!firebaseOk) seedInitialItems();
+
+  // 管理画面表示中は再描画しない（保存ボタン等への干渉を防ぐ）
+  if (!document.getElementById('screen-admin').classList.contains('active')) {
+    renderItems();
+    checkOverdue();
   }
 })();
 
@@ -2259,7 +2265,8 @@ function seedInitialItems() {
 }
 
 function init() {
-  seedInitialItems();
+  // 注意：seedInitialItems() はFirebase初期化IIFE内で呼ぶ
+  // （Firestore同期との競合＝初期データによる上書きを防ぐため）
   renderItems();
   checkOverdue();
 
