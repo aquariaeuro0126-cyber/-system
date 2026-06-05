@@ -979,27 +979,16 @@ async function syncFromFirestore() {
       _fsDb.collection('data').doc('loans').get(),
       _fsDb.collection('data').doc('settings').get()
     ]);
+    // 画像・音声はStorage URL（imageUrl/customSoundUrl）で表示・再生するため
+    // localStorageにはBase64を保持しない（5MB制限対策）。Firestoreの内容をそのまま保存
     if (itemsSnap.exists) {
-      // Firestoreのアイテム + ローカルのBase64画像をマージ（ローカル画像を保持）
-      const localItems = JSON.parse(localStorage.getItem('eq_items') || '[]');
-      const merged = itemsSnap.data().value.map(fsItem => {
-        const local = localItems.find(li => li.id === fsItem.id);
-        return local?.image ? { ...fsItem, image: local.image } : fsItem;
-      });
-      localStorage.setItem('eq_items', JSON.stringify(merged));
+      localStorage.setItem('eq_items', JSON.stringify(itemsSnap.data().value));
     }
     if (loansSnap.exists) {
       localStorage.setItem('eq_loans', JSON.stringify(loansSnap.data().value));
     }
     if (settingsSnap.exists) {
-      // Firestoreの設定 + ローカルのBase64音声をマージ（ローカル音声を保持）
-      const localSettings = JSON.parse(localStorage.getItem('eq_settings') || '{}');
-      const fsSettings    = settingsSnap.data().value;
-      const merged = { ...fsSettings };
-      if (localSettings.customSound)      merged.customSound      = localSettings.customSound;
-      if (localSettings.customSoundName)  merged.customSoundName  = localSettings.customSoundName;
-      if (localSettings.customSoundLabel) merged.customSoundLabel = localSettings.customSoundLabel;
-      localStorage.setItem('eq_settings', JSON.stringify(merged));
+      localStorage.setItem('eq_settings', JSON.stringify(settingsSnap.data().value));
     }
     updateSyncStatus('synced');
   } catch(e) {
@@ -1092,7 +1081,15 @@ const DB = {
     return JSON.parse(localStorage.getItem('eq_items') || '[]');
   },
   saveItems(items) {
-    localStorage.setItem('eq_items', JSON.stringify(items));
+    // Base64画像（image）はlocalStorageに保存しない（5MB制限対策）
+    // 表示はStorageのimageUrlを使う。localStorageには軽量データのみ保存
+    const lightItems = items.map(({ image, ...rest }) => rest);
+    try {
+      localStorage.setItem('eq_items', JSON.stringify(lightItems));
+    } catch(e) {
+      console.error('localStorage保存エラー:', e);
+      showToast('⚠️ ブラウザの保存容量が不足しています', 'error');
+    }
     syncToFirestore('items', items);
   },
 
@@ -1111,7 +1108,15 @@ const DB = {
     return Object.assign(defaults, JSON.parse(localStorage.getItem('eq_settings') || '{}'));
   },
   saveSettings(settings) {
-    localStorage.setItem('eq_settings', JSON.stringify(settings));
+    // Base64音声（customSound）はlocalStorageに保存しない（5MB制限対策）
+    // 再生はStorageのcustomSoundUrlを使う
+    const { customSound, ...lightSettings } = settings;
+    try {
+      localStorage.setItem('eq_settings', JSON.stringify(lightSettings));
+    } catch(e) {
+      console.error('localStorage保存エラー:', e);
+      showToast('⚠️ ブラウザの保存容量が不足しています', 'error');
+    }
     syncToFirestore('settings', settings);
   },
 
