@@ -838,6 +838,12 @@ body {
         <button class="btn-danger" onclick="clearAll()">全データをリセット</button>
       </div>
     </div>
+    <div class="admin-card">
+      <h3>🔧 同期診断</h3>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">クラウド同期がうまくいかない時に押してください。原因を自動で診断します。</p>
+      <button class="csv-btn" style="margin-bottom:0;" onclick="runSyncDiagnosis()">🔍 同期テストを実行する</button>
+      <pre id="sync-diagnosis-result" style="display:none;margin-top:12px;padding:12px;background:#1e1e1e;color:#0f0;font-size:12px;border-radius:8px;white-space:pre-wrap;word-break:break-all;line-height:1.6;"></pre>
+    </div>
   </div>
 </div>
 
@@ -2129,6 +2135,92 @@ function clearAll() {
   clearFirestoreData();
   showToast('🗑 全データをリセットしました');
   goHome();
+}
+
+// ===== 同期診断 =====
+async function runSyncDiagnosis() {
+  const out = document.getElementById('sync-diagnosis-result');
+  out.style.display = 'block';
+  const log = [];
+  const print = (msg) => { log.push(msg); out.textContent = log.join('\n'); };
+
+  print('🔍 同期診断を開始します...\n');
+
+  // 1. SDK読み込み確認
+  if (typeof firebase === 'undefined') {
+    print('❌ Firebase SDK が読み込まれていません。');
+    print('   → ネットワーク接続を確認してください。');
+    return;
+  }
+  print('✅ Firebase SDK 読み込みOK');
+
+  // 2. 初期化確認
+  if (!_fsDb) {
+    print('❌ Firestore が初期化されていません（_fsDb = null）。');
+    print('   → 初期化時にエラーが発生しています。');
+    return;
+  }
+  print('✅ Firestore 初期化OK');
+  print(_fsStorage ? '✅ Storage 初期化OK' : '⚠️ Storage 未初期化');
+
+  // 3. 読み込みテスト
+  print('\n--- 読み込みテスト ---');
+  try {
+    const snap = await _fsDb.collection('data').doc('items').get();
+    if (snap.exists) {
+      const cnt = (snap.data().value || []).length;
+      print(`✅ items 読み込みOK（${cnt}件）`);
+    } else {
+      print('⚠️ items ドキュメントが存在しません（未作成）');
+    }
+  } catch(e) {
+    print(`❌ 読み込み失敗: ${e.code || e.message}`);
+    if (e.code === 'permission-denied') {
+      print('   → Firestoreのセキュリティルールが拒否しています。');
+      print('   → ルールの有効期限切れの可能性大。');
+    }
+  }
+
+  // 4. 書き込みテスト
+  print('\n--- 書き込みテスト ---');
+  try {
+    await _fsDb.collection('data').doc('_diagnosis').set({
+      test: true,
+      at: new Date().toISOString()
+    });
+    print('✅ 書き込みOK！クラウド保存は正常です。');
+  } catch(e) {
+    const code = e.code || e.message;
+    print(`❌ 書き込み失敗: ${code}`);
+    if (code === 'permission-denied') {
+      print('   → 【原因特定】Firestoreルールが書き込みを拒否。');
+      print('   → Firebaseコンソールでルールの有効期限を確認・延長してください。');
+    } else if (code === 'invalid-argument') {
+      print('   → データサイズ超過（1MiB制限）。');
+    } else if (code === 'unavailable') {
+      print('   → ネットワーク未接続。');
+    }
+    return;
+  }
+
+  // 5. Storage書き込みテスト
+  if (_fsStorage) {
+    print('\n--- Storage書き込みテスト ---');
+    try {
+      const testRef = _fsStorage.ref('diagnosis/test.txt');
+      await testRef.putString('test');
+      print('✅ Storage書き込みOK！画像同期は正常です。');
+    } catch(e) {
+      const code = e.code || e.message;
+      print(`❌ Storage書き込み失敗: ${code}`);
+      if (String(code).includes('unauthorized') || String(code).includes('permission')) {
+        print('   → 【原因特定】Storageルールが書き込みを拒否。');
+        print('   → Firebaseコンソール→Storage→ルールの有効期限を確認してください。');
+      }
+    }
+  }
+
+  print('\n🔍 診断完了。上の内容を伝えてください。');
 }
 
 // ===== 1ヶ月超過バッジ =====
