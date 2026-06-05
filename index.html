@@ -249,6 +249,11 @@ body {
   transition: transform 0.1s;
 }
 .btn-primary:active { transform: scale(0.97); }
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: wait;
+  background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+}
 .btn-secondary {
   background: #ecf0f1;
   color: #555;
@@ -750,7 +755,7 @@ body {
       </div>
       <input type="hidden" id="admin-item-edit-id" value="">
       <div style="display:flex;gap:10px;">
-        <button class="btn-primary" onclick="saveItem()">保存する</button>
+        <button id="btn-save-item" class="btn-primary" onclick="saveItem()">保存する</button>
         <button class="btn-secondary" id="cancel-edit-btn" onclick="cancelEdit()" style="display:none;">キャンセル</button>
       </div>
     </div>
@@ -1743,73 +1748,95 @@ function renderAdminItems() {
   }).join('');
 }
 
+let _savingItem = false;  // 保存処理中フラグ（二重実行防止）
+
 async function saveItem() {
+  if (_savingItem) return;  // 処理中の再クリックを無視
+
   const name  = document.getElementById('admin-item-name').value.trim();
   const total = parseInt(document.getElementById('admin-item-total').value);
 
   if (!name)  { showToast('備品名を入力してください', 'error'); return; }
   if (!total || total < 1) { showToast('総数を1以上で入力してください', 'error'); return; }
 
-  const items    = DB.getItems();
-  const targetId = editingItemId || ('item_' + Date.now());
-
-  // 新しい画像が選択されていればStorageにアップロード
-  let newImageUrl = existingImageUrl;  // デフォルトは既存URLを保持
-  if (uploadedImage && _fsStorage) {
-    try {
-      updateSyncStatus('syncing');
-      newImageUrl = await uploadToStorage(`items/${targetId}`, uploadedImage);
-    } catch(e) {
-      console.warn('Storage画像アップロード失敗:', e);
-      newImageUrl = existingImageUrl;  // 失敗時は既存URLを保持
-    }
+  // ボタンを処理中表示にして二重クリックを防ぐ
+  _savingItem = true;
+  const saveBtn = document.getElementById('btn-save-item');
+  const btnText = saveBtn ? saveBtn.textContent : '';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = '⏳ 保存中...';
   }
 
-  if (editingItemId) {
-    // 編集
-    const idx = items.findIndex(i => i.id === editingItemId);
-    if (idx !== -1) {
-      items[idx].name  = name;
-      items[idx].total = total;
-      if (uploadedImage) {
-        items[idx].image    = uploadedImage;  // ローカル表示用Base64
-        items[idx].imageUrl = newImageUrl;    // Storage URL
-      } else if (existingImageUrl) {
-        items[idx].imageUrl = existingImageUrl;  // 画像変更なし → 既存URLを保持
-      } else {
-        items[idx].image    = null;
-        items[idx].imageUrl = null;
-        items[idx].emoji    = selectedEmoji;
+  try {
+    const items    = DB.getItems();
+    const targetId = editingItemId || ('item_' + Date.now());
+
+    // 新しい画像が選択されていればStorageにアップロード
+    let newImageUrl = existingImageUrl;  // デフォルトは既存URLを保持
+    if (uploadedImage && _fsStorage) {
+      try {
+        updateSyncStatus('syncing');
+        newImageUrl = await uploadToStorage(`items/${targetId}`, uploadedImage);
+      } catch(e) {
+        console.warn('Storage画像アップロード失敗:', e);
+        newImageUrl = existingImageUrl;  // 失敗時は既存URLを保持
       }
     }
-    editingItemId    = null;
-    existingImageUrl = null;
-    document.getElementById('item-form-title').textContent = '＋ 備品を登録する';
-    document.getElementById('cancel-edit-btn').style.display = 'none';
-  } else {
-    // 新規
-    items.push({
-      id:       targetId,
-      name,
-      total,
-      emoji:    selectedEmoji,
-      image:    uploadedImage || null,
-      imageUrl: newImageUrl   || null
-    });
-  }
 
-  DB.saveItems(items);
-  document.getElementById('admin-item-name').value = '';
-  document.getElementById('admin-item-total').value = '1';
-  uploadedImage    = null;
-  existingImageUrl = null;
-  document.getElementById('admin-img-preview').style.display = 'none';
-  document.getElementById('admin-img-upload').value = '';
-  selectedEmoji = '📦';
-  renderEmojiPicker();
-  renderAdminItems();
-  Sound.playClick();
-  showToast('✅ 備品を保存しました', 'success');
+    if (editingItemId) {
+      // 編集
+      const idx = items.findIndex(i => i.id === editingItemId);
+      if (idx !== -1) {
+        items[idx].name  = name;
+        items[idx].total = total;
+        if (uploadedImage) {
+          items[idx].image    = uploadedImage;  // ローカル表示用Base64
+          items[idx].imageUrl = newImageUrl;    // Storage URL
+        } else if (existingImageUrl) {
+          items[idx].imageUrl = existingImageUrl;  // 画像変更なし → 既存URLを保持
+        } else {
+          items[idx].image    = null;
+          items[idx].imageUrl = null;
+          items[idx].emoji    = selectedEmoji;
+        }
+      }
+      editingItemId    = null;
+      existingImageUrl = null;
+      document.getElementById('item-form-title').textContent = '＋ 備品を登録する';
+      document.getElementById('cancel-edit-btn').style.display = 'none';
+    } else {
+      // 新規
+      items.push({
+        id:       targetId,
+        name,
+        total,
+        emoji:    selectedEmoji,
+        image:    uploadedImage || null,
+        imageUrl: newImageUrl   || null
+      });
+    }
+
+    DB.saveItems(items);
+    document.getElementById('admin-item-name').value = '';
+    document.getElementById('admin-item-total').value = '1';
+    uploadedImage    = null;
+    existingImageUrl = null;
+    document.getElementById('admin-img-preview').style.display = 'none';
+    document.getElementById('admin-img-upload').value = '';
+    selectedEmoji = '📦';
+    renderEmojiPicker();
+    renderAdminItems();
+    Sound.playClick();
+    showToast('✅ 備品を保存しました', 'success');
+  } finally {
+    // 成否にかかわらずボタンを必ず元に戻す
+    _savingItem = false;
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存する';
+    }
+  }
 }
 
 function editItem(itemId) {
