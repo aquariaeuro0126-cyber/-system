@@ -265,6 +265,19 @@ body {
   transition: transform 0.1s;
 }
 .btn-secondary:active { transform: scale(0.97); }
+.btn-cancel-select {
+  width: 100%;
+  background: transparent;
+  color: #e74c3c;
+  border: none;
+  padding: 10px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s, background 0.2s;
+}
+.btn-cancel-select:active { transform: scale(0.97); background: #fdecea; }
 .btn-danger {
   flex: 1;
   background: linear-gradient(135deg, #e74c3c, #c0392b);
@@ -865,6 +878,9 @@ body {
       <button class="btn-secondary" style="width:100%;text-align:center;" onclick="closeMoreModal()">
         ＋ 他にも追加する
       </button>
+      <button class="btn-cancel-select" onclick="cancelSelection()">
+        ✕ 選択をやめる（最初に戻る）
+      </button>
     </div>
   </div>
 </div>
@@ -1444,6 +1460,14 @@ function openMoreModal() {
 
 function closeMoreModal() {
   document.getElementById('overlay-more').classList.remove('show');
+}
+
+// 選択をすべて取り消して最初の選択画面に戻す
+function cancelSelection() {
+  Sound.playClick();
+  selectedItems = [];
+  renderItems();
+  closeMoreModal();
 }
 
 function openNameModal() {
